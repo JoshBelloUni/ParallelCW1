@@ -40,12 +40,22 @@
 // Constructs a thresholded image in place, and saves as a new .pgm file.
 void saveThresholdImage( struct Image *img )
 {
-	int row, col;
+
+	double start = omp_get_wtime();
 
 	// You need to parallelise this operation.
-	for( row=0; row<img->size; row++ )
-		for( col=0; col<img->size; col++ )
+	#pragma omp parallel for collapse(2)
+	for( int row=0; row<img->size; row++ ) {
+		for( int col=0; col<img->size; col++ ) {
+			if (col == 0) {
+				printf("Thread %d is processing row %d\n", omp_get_thread_num(), row);
+			}
 			img->pixels[row][col] = ( img->pixels[row][col]>127 ? 255 : 0 );
+		}
+	}
+
+	double end = omp_get_wtime();
+	printf("Time taken: %f seconds\n", end - start);
 
 	// You must call this function to save your final image.
 	writeThresholdImage( img );
@@ -55,7 +65,17 @@ void saveThresholdImage( struct Image *img )
 void saveFlippedImage( struct Image *img )
 {
 	// Your parallel implementation should go here.
+	#pragma omp parallel for collapse(2) 
+	for( int row=0; row<img->size/2; row++ ) {
+		for( int col=0; col<img->size; col++ ) {
+			int temp = img->pixels[row][col];
 
+			int target_row = (img->size - 1) - row;
+        
+			img->pixels[row][col] = img->pixels[target_row][col];
+			img->pixels[target_row][col] = temp;
+		}
+	}
 	// You must call this function to save your final image.
 	writeFlippedImage( img );
 }
@@ -68,7 +88,27 @@ void saveEdgeImage( struct Image *img )
 	// Note edgeValue() reads pixels at: [row-1][col], [row+1][col], [row][col-1], and [row][col+1].
 
 	// Your parallel implementation should go here.
+	int **new_grid;
+	allocSquareGrid(&new_grid, img->size);
 
+	//#pragma omp parallel for collapse(2) 
+	for( int row=0; row<img->size; row++ ) {
+		for( int col=0; col<img->size; col++ ){
+			new_grid[row][col] = edgeValue(row, col, img);
+		}
+	}
+	
+	//#pragma omp parallel for collapse(2)
+    for( int row=0; row < img->size; row++ ) {
+        for( int col=0; col < img->size; col++ ) {
+            img->pixels[row][col] = new_grid[row][col];
+        }
+    }
+
+	for(int i = 0; i < img->size; i++) {
+    	free(new_grid[i]);
+	}
+	free(new_grid);
 	// You must call this function to save your final image.
 	writeEdgeImage( img );
 }
@@ -83,6 +123,7 @@ void generateHistogram( struct Image *img )
 	int row, col;
 
 	// You need to parallelise this operation.
+	#pragma omp parallel for collapse(2)
 	for( row=0; row<img->size; row++ )
 		for( col=0; col<img->size; col++ )
 		{
