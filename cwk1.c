@@ -41,102 +41,107 @@
 void saveThresholdImage( struct Image *img )
 {
 
-	double start = omp_get_wtime();
+    double start = omp_get_wtime();
 
-	// You need to parallelise this operation.
-	#pragma omp parallel for collapse(2)
-	for( int row=0; row<img->size; row++ ) {
-		for( int col=0; col<img->size; col++ ) {
-			if (col == 0) {
-				printf("Thread %d is processing row %d\n", omp_get_thread_num(), row);
-			}
-			img->pixels[row][col] = ( img->pixels[row][col]>127 ? 255 : 0 );
-		}
-	}
+    // You need to parallelise this operation.
+    #pragma omp parallel for collapse(2)
+    for( int row=0; row<img->size; row++ ) {
+        for( int col=0; col<img->size; col++ ) {
+            if (col == 0) {
+                printf("Thread %d is processing row %d\n", omp_get_thread_num(), row);
+            }
+            img->pixels[row][col] = ( img->pixels[row][col]>127 ? 255 : 0 );
+        }
+    }
 
-	double end = omp_get_wtime();
-	printf("Time taken: %f seconds\n", end - start);
+    double end = omp_get_wtime();
+    printf("Time taken: %f seconds\n", end - start);
 
-	// You must call this function to save your final image.
-	writeThresholdImage( img );
+    // You must call this function to save your final image.
+    writeThresholdImage( img );
 }
 
 // Flips the image vertically, and outputs to a new .pgm file.
 void saveFlippedImage( struct Image *img )
 {
-	// Your parallel implementation should go here.
-	#pragma omp parallel for collapse(2) 
-	for( int row=0; row<img->size/2; row++ ) {
-		for( int col=0; col<img->size; col++ ) {
-			int temp = img->pixels[row][col];
+    // Your parallel implementation should go here.
+    #pragma omp parallel for collapse(2) 
+    for( int row=0; row<img->size/2; row++ ) {
+        for( int col=0; col<img->size; col++ ) {
+            int temp = img->pixels[row][col];
 
-			int target_row = (img->size - 1) - row;
+            int target_row = (img->size - 1) - row;
         
-			img->pixels[row][col] = img->pixels[target_row][col];
-			img->pixels[target_row][col] = temp;
-		}
-	}
-	// You must call this function to save your final image.
-	writeFlippedImage( img );
+            img->pixels[row][col] = img->pixels[target_row][col];
+            img->pixels[target_row][col] = temp;
+        }
+    }
+    // You must call this function to save your final image.
+    writeFlippedImage( img );
 }
 
 // Outputs an image that highights edges in the original.
 void saveEdgeImage( struct Image *img )
 {
-	// For the edge image, each pixel at (row,col) should be replaced with the value returned by
-	// edgeValue(row,col,img), which is defined in cwk_extra.h and returns higher values near edges.
-	// Note edgeValue() reads pixels at: [row-1][col], [row+1][col], [row][col-1], and [row][col+1].
+    // For the edge image, each pixel at (row,col) should be replaced with the value returned by
+    // edgeValue(row,col,img), which is defined in cwk_extra.h and returns higher values near edges.
+    // Note edgeValue() reads pixels at: [row-1][col], [row+1][col], [row][col-1], and [row][col+1].
 
-	// Your parallel implementation should go here.
-	int **new_grid;
-	allocSquareGrid(&new_grid, img->size);
+    // Your parallel implementation should go here.
 
-	//#pragma omp parallel for collapse(2) 
-	for( int row=0; row<img->size; row++ ) {
-		for( int col=0; col<img->size; col++ ){
-			new_grid[row][col] = edgeValue(row, col, img);
-		}
-	}
-	
-	//#pragma omp parallel for collapse(2)
-    for( int row=0; row < img->size; row++ ) {
-        for( int col=0; col < img->size; col++ ) {
-            img->pixels[row][col] = new_grid[row][col];
+    int redBlack;
+
+    // Outer loop runs twice: once for 'Red' (0) and once for 'Black' (1).
+    for( redBlack = 0; redBlack < 2; redBlack++ ) 
+    {
+        
+        for( int row = 0; row < img->size; row++ ) {
+            #pragma omp parallel for
+            for( int col = 0; col < img->size; col++ ) {
+                
+                if( (row + col) % 2 == redBlack ) 
+                {
+                    img->pixels[row][col] = edgeValue(row, col, img);
+                }
+            }
         }
     }
 
-	for(int i = 0; i < img->size; i++) {
-    	free(new_grid[i]);
-	}
-	free(new_grid);
-	// You must call this function to save your final image.
-	writeEdgeImage( img );
-}
+    // Save the final result 
+    writeEdgeImage( img );
+}	
 
 // Constructs and outputs a histogram containing the number of each greyscale value in the image.
 void generateHistogram( struct Image *img )
 {
-	// Initialise the histogram to zero ("calloc" rather than "malloc"). You do not need to parallelise this initialisation.
-	int *hist = (int*) calloc( MAXVALUE, sizeof(int) );
+    // Initialise the histogram to zero ("calloc" rather than "malloc"). You do not need to parallelise this initialisation.
+    int *hist = (int*) calloc( MAXVALUE+1, sizeof(int) );
 
-	// Loop through all pixels and add to the relevant histogram bin.
-	int row, col;
+    // Loop through all pixels and add to the relevant histogram bin.
+    int row, col;
 
-	// You need to parallelise this operation.
-	#pragma omp parallel for collapse(2)
-	for( row=0; row<img->size; row++ )
-		for( col=0; col<img->size; col++ )
-		{
-			int val = img->pixels[row][col];
-			if( val>=0 && val<=MAXVALUE )		// Check that the value is in the valid range before updating the histogram.
-				hist[val]++;
-		}
-	
-	// Save the histogram to file. There is a Python script you can use to visualise the results from this file.
-	saveHistogram( hist );
+    // You need to parallelise this operation.
+    //#pragma omp parallel for collapse(2)
+    for( row=0; row<img->size; row++ )
+        for( col=0; col<img->size; col++ )
+        {
+            int val = img->pixels[row][col];
+            if( val>=0 && val<=MAXVALUE )		// Check that the value is in the valid range before updating the histogram.
+                hist[val]++;
+        }
+    
+    int count = 0;
+    for (int i=0; i< MAXVALUE; i++) {
+        count += hist[i];
+    }
 
-	// Free up the memory allocated for the histogram.
-	free( hist );
+    printf("%i\n", count);
+    
+    // Save the histogram to file. There is a Python script you can use to visualise the results from this file.
+    saveHistogram( hist );
+
+    // Free up the memory allocated for the histogram.
+    free( hist );
 }
 
 
@@ -153,9 +158,9 @@ int main( int argc, char **argv )
     if( argc != 3 )
     {
         printf( "Call with the name of the image file to read, and a single digit for the operation to perform:\n" );
-		printf( "(1) Save a thresholded version of the image;\n(2) Save a vertically flipped image;\n" );
-		printf( "(3) Save a edge image that attempts to highlight edges in the original; or\n" );
-		printf( "(4) Save a histogram of grey scale values in the image.\n" );
+        printf( "(1) Save a thresholded version of the image;\n(2) Save a vertically flipped image;\n" );
+        printf( "(3) Save a edge image that attempts to highlight edges in the original; or\n" );
+        printf( "(4) Save a histogram of grey scale values in the image.\n" );
 
         return EXIT_FAILURE;
     }
@@ -168,32 +173,32 @@ int main( int argc, char **argv )
         return EXIT_FAILURE;
     }
  
-	// Attempts to open the file and return a structure for the image.
-	struct Image img;
-	if( readImage(argv[1],&img)==-1 ) return EXIT_FAILURE;
-	printf( "Loaded a square %ix%i image with a maximum greyscale value of %i.\n", img.size, img.size, MAXVALUE );
+    // Attempts to open the file and return a structure for the image.
+    struct Image img;
+    if( readImage(argv[1],&img)==-1 ) return EXIT_FAILURE;
+    printf( "Loaded a square %ix%i image with a maximum greyscale value of %i.\n", img.size, img.size, MAXVALUE );
 
-	//
-	// Perform the action based on the option provided on the command line.
-	//
-	printf( "Performing option '%i' using %i OpenMP thread(s).\n", option, omp_get_max_threads() );
+    //
+    // Perform the action based on the option provided on the command line.
+    //
+    printf( "Performing option '%i' using %i OpenMP thread(s).\n", option, omp_get_max_threads() );
 
-	switch( option )
-	{
-		case 1 : saveThresholdImage( &img ); break;
-		case 2 : saveFlippedImage  ( &img ); break;
-		case 3 : saveEdgeImage     ( &img ); break;
-		case 4 : generateHistogram( &img ); break;
-		default:
-			return EXIT_FAILURE;
-	}
+    switch( option )
+    {
+        case 1 : saveThresholdImage( &img ); break;
+        case 2 : saveFlippedImage  ( &img ); break;
+        case 3 : saveEdgeImage     ( &img ); break;
+        case 4 : generateHistogram( &img ); break;
+        default:
+            return EXIT_FAILURE;
+    }
 
-	//
-	// Finalise.
-	//
+    //
+    // Finalise.
+    //
 
-	// Release memory allocated for the image.
-	freeImage( &img );
+    // Release memory allocated for the image.
+    freeImage( &img );
 
     return EXIT_SUCCESS;
 }
