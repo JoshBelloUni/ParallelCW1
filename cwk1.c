@@ -40,23 +40,13 @@
 // Constructs a thresholded image in place, and saves as a new .pgm file.
 void saveThresholdImage( struct Image *img )
 {
-
-    double start = omp_get_wtime();
-
     // You need to parallelise this operation.
-    #pragma omp parallel for collapse(2)
+    #pragma omp parallel for collapse(2)    // Collapse the nested loops
     for( int row=0; row<img->size; row++ ) {
         for( int col=0; col<img->size; col++ ) {
-            if (col == 0) {
-                printf("Thread %d is processing row %d\n", omp_get_thread_num(), row);
-            }
             img->pixels[row][col] = ( img->pixels[row][col]>127 ? 255 : 0 );
         }
     }
-
-    double end = omp_get_wtime();
-    printf("Time taken: %f seconds\n", end - start);
-
     // You must call this function to save your final image.
     writeThresholdImage( img );
 }
@@ -65,7 +55,7 @@ void saveThresholdImage( struct Image *img )
 void saveFlippedImage( struct Image *img )
 {
     // Your parallel implementation should go here.
-    #pragma omp parallel for collapse(2) 
+    #pragma omp parallel for collapse(2)    // Collapse the for loops as they have the same logic
     for( int row=0; row<img->size/2; row++ ) {
         for( int col=0; col<img->size; col++ ) {
             int temp = img->pixels[row][col];
@@ -91,14 +81,12 @@ void saveEdgeImage( struct Image *img )
 
     int redBlack;
 
-    // Outer loop runs twice: once for 'Red' (0) and once for 'Black' (1).
+    // Loops twice: once for 'Red' (0) and once for 'Black' (1).
     for( redBlack = 0; redBlack < 2; redBlack++ ) 
     {
-        
+        #pragma omp parallel for collapse(2)    // Collapse the nested loops
         for( int row = 0; row < img->size; row++ ) {
-            #pragma omp parallel for
             for( int col = 0; col < img->size; col++ ) {
-                
                 if( (row + col) % 2 == redBlack ) 
                 {
                     img->pixels[row][col] = edgeValue(row, col, img);
@@ -115,28 +103,30 @@ void saveEdgeImage( struct Image *img )
 void generateHistogram( struct Image *img )
 {
     // Initialise the histogram to zero ("calloc" rather than "malloc"). You do not need to parallelise this initialisation.
-    int *hist = (int*) calloc( MAXVALUE+1, sizeof(int) );
+    int *hist = (int*) calloc( MAXVALUE, sizeof(int) );
 
     // Loop through all pixels and add to the relevant histogram bin.
     int row, col;
 
     // You need to parallelise this operation.
-    //#pragma omp parallel for collapse(2)
-    for( row=0; row<img->size; row++ )
+    #pragma omp parallel for collapse(2)    // Prevent threads from accessing the same row/col pair
+    for( row=0; row<img->size; row++ ) {
         for( col=0; col<img->size; col++ )
         {
             int val = img->pixels[row][col];
-            if( val>=0 && val<=MAXVALUE )		// Check that the value is in the valid range before updating the histogram.
+            if( val>=0 && val<=MAXVALUE )
+                #pragma omp atomic  // Prevents the old value being updated by different threads
                 hist[val]++;
         }
+    }
     
+    // Check if hist counts all pixels correctly (should be 800x800 = 640000)
     int count = 0;
-    for (int i=0; i< MAXVALUE; i++) {
+    for (int i=0; i <= MAXVALUE; i++) {
         count += hist[i];
     }
+    printf("Total Pixel Count: %i\n", count);
 
-    printf("%i\n", count);
-    
     // Save the histogram to file. There is a Python script you can use to visualise the results from this file.
     saveHistogram( hist );
 
