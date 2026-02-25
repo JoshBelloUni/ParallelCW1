@@ -105,19 +105,31 @@ void generateHistogram( struct Image *img )
     // Initialise the histogram to zero ("calloc" rather than "malloc"). You do not need to parallelise this initialisation.
     int *hist = (int*) calloc( MAXVALUE, sizeof(int) );
 
-    // Loop through all pixels and add to the relevant histogram bin.
-    int row, col;
+    #pragma omp parallel
+    {
+        // Create a local histogram per thread
+        int *local_hist = (int*) calloc( MAXVALUE + 1, sizeof(int) );
 
-    // You need to parallelise this operation.
-    #pragma omp parallel for collapse(2)    // Prevent threads from accessing the same row/col pair
-    for( row=0; row<img->size; row++ ) {
-        for( col=0; col<img->size; col++ )
-        {
-            int val = img->pixels[row][col];
-            if( val>=0 && val<=MAXVALUE )
-                #pragma omp atomic  // Prevents the old value being updated by different threads
-                hist[val]++;
+        #pragma omp for collapse(2)
+        for( int row=0; row<img->size; row++ ) {
+            for( int col=0; col<img->size; col++ ) {
+                int val = img->pixels[row][col];
+                if( val>=0 && val<=MAXVALUE ) {
+                    // No need for #pragma omp atomic, it would block for every pixel
+                    local_hist[val]++; 
+                }
+            }
         }
+
+        // Take all local results then add them up
+        #pragma omp critical
+        {
+            for( int i=0; i<=MAXVALUE; i++ ) {
+                hist[i] += local_hist[i];
+            }
+        }
+
+        free(local_hist);
     }
     
     // Check if hist counts all pixels correctly (should be 800x800 = 640000)
